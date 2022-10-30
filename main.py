@@ -21,12 +21,12 @@ def help_start_command(message: tb.types.Message) -> None:
 
 @bot.message_handler(commands=["lowprice"])
 def lowprice_command(message: tb.types.Message) -> None:
-	lowprice.start_low(message=message)
+	lowprice.start(message=message)
 
 
 @bot.message_handler(commands=["highprice"])
 def highprice_command(message: tb.types.Message) -> None:
-	highprice.start_high(message=message)
+	highprice.start(message=message)
 
 
 @bot.message_handler(commands=["bestdeal"])
