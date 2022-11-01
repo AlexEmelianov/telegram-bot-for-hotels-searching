@@ -5,9 +5,6 @@ import lowprice
 import bestdeal
 import history
 
-if __name__ != '__main__':
-	exit(0)
-
 
 @bot.message_handler(commands=["help", "start"])
 def help_start_command(message: tb.types.Message) -> None:
@@ -31,8 +28,7 @@ def highprice_command(message: tb.types.Message) -> None:
 
 @bot.message_handler(commands=["bestdeal"])
 def bestdeal_command(message: tb.types.Message) -> None:
-	text = bestdeal.get_bestdeal()
-	bot.send_message(chat_id=message.chat.id, text=text)
+	bestdeal.start(message=message)
 
 
 @bot.message_handler(commands=["history"])
@@ -57,4 +53,5 @@ def get_text_messages(message: tb.types.Message) -> None:
 	bot.send_message(chat_id=message.chat.id, text=text)
 
 
-bot.infinity_polling()
+if __name__ == '__main__':
+	bot.infinity_polling()

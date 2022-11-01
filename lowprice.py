@@ -11,5 +11,7 @@ def start(message: tb.types.Message) -> None:
     """
     g.chat_id = message.chat.id
     g.buffer["sort_order"] = "PRICE"
+    g.buffer["cur_page"] = 1
+    g.buffer["found_hotels"] = 0
     g.start(message=message)
 

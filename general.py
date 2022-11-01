@@ -7,10 +7,9 @@ import datetime as dt
 # Telegram bot 'hotels.com explorer' @hotels_com_explorer_bot
 bot = tb.TeleBot('5674957505:AAHYD-lzCXY8ZviDoarCW3ZC5-ejgdQMN7k', threaded=False)
 chat_id = 0
-max_n_hotels = 20  # Максимальное количество отелей для вывода пользователю
+max_n_hotels = 20  # Максимальное количество отелей для вывода пользователю (не больше 25)
 max_n_photos = 20  # Максимальное количество фотографий для вывода пользователю
-buffer = {}        # Хранилище данных
-
+buffer = {}  # Хранилище данных
 headers = {
     "X-RapidAPI-Key": "b0223e57dfmshcde41c766925241p162c8djsn3d243fb512ac",
     "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
@@ -26,16 +25,30 @@ def check_int(message: tb.types.Message) -> None:
     :param message: входящее сообщение
     :type message: tb.types.Message
     """
-    try:
-        number = int(message.text)
-        if number < buffer["bounds"][0] or number > buffer["bounds"][1]:
-            raise ValueError
-    except ValueError:
-        bot.send_message(chat_id=chat_id, text=f"Я жду от вас число от {buffer['bounds'][0]} до {buffer['bounds'][1]}")
-        bot.register_next_step_handler(message=message, callback=check_int)
-    else:
+    if buffer["bounds"] is None:  # Проверяем два числа
+        buffer["number"] = []
+        for number in message.text.strip().split()[:2]:
+            try:
+                buffer["number"].append(abs(int(number)))
+            except ValueError:
+                bot.send_message(chat_id=chat_id, text="Цифрами, пожалуйста.")
+                bot.register_next_step_handler(message=message, callback=check_int)
+                return
+        if buffer["number"][0] > buffer["number"][1]:
+            buffer["number"][0], buffer["number"][1] = buffer["number"][1], buffer["number"][0]
+
+    else:   # Проверяем одно число
+        try:
+            number = int(message.text)
+            if number < buffer["bounds"][0] or number > buffer["bounds"][1]:
+                raise ValueError
+        except ValueError:
+            bot.send_message(chat_id=chat_id, text=f"Я жду от вас число от {buffer['bounds'][0]} до {buffer['bounds'][1]}")
+            bot.register_next_step_handler(message=message, callback=check_int)
+            return
         buffer["number"] = number
-        buffer["next_func"](message=message)
+
+    buffer["next_func"](message=message)
 
 
 def start(message: tb.types.Message) -> None:
@@ -51,8 +64,7 @@ def start(message: tb.types.Message) -> None:
 
 def search_locations(message: tb.types.Message) -> None:
     """
-    Ищет города по вводу пользователя. Следующая функция: choose_n_hotels или choose_city.
-    Если города не найдены, то ждёт ответ и повторяет поиск.
+    Ищет города по вводу пользователя. Если города не найдены, то ждёт ответ и повторяет поиск.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
@@ -63,8 +75,8 @@ def search_locations(message: tb.types.Message) -> None:
     response = requests.get(url=url, headers=headers, params=params)
     if response.status_code != 200:
         bot.send_message(chat_id=chat_id, text=f"Ошибка соединения с сервером hotels.com. "
-                                                 f"Код = {response.status_code}\n"
-                                                 f"Напишите что-нибудь и я попробую ещё раз.")
+                                               f"Код = {response.status_code}\n"
+                                               f"Напишите что-нибудь и я попробую ещё раз.")
         bot.register_next_step_handler(message=message, callback=search_locations)
         return
 
@@ -79,13 +91,20 @@ def search_locations(message: tb.types.Message) -> None:
         bot.register_next_step_handler(message=message, callback=search_locations)
         return
     elif len(buffer["cities"]) == 1:
-        bot.send_message(chat_id=chat_id, text=f"По вашему запросу найден город: {buffer['cities'][0][0]}\n\n"
-                                                 f"Сколько отелей будем искать? "
-                                                 f"Только не больше {max_n_hotels}, пожалуйста.")
+        if buffer["sort_order"] == "BEST_SELLER":
+            text = "В каком диапазоне цен (в долларах) вы хотите найти отели?" \
+                   "Просто напишите пару чисел, например:\n10  30"
+            # Проверяем вводимые числа и переходим в choose_prices
+            buffer["bounds"] = None
+            buffer["next_func"] = choose_prices
+        else:
+            text = f"Сколько отелей будем искать? Только не больше {max_n_hotels}, пожалуйста."
+            # Проверяем вводимое число и переходим в choose_n_hotels
+            buffer["bounds"] = (1, max_n_hotels)
+            buffer["next_func"] = choose_n_hotels
+
+        bot.send_message(chat_id=chat_id, text=f"По вашему запросу найден город: {buffer['cities'][0][0]}\n\n{text}")
         buffer["destinationId"] = buffer["cities"][0][1]
-        # Проверяем вводимое число и переходим в choose_n_hotels
-        buffer["bounds"] = (1, max_n_hotels)
-        buffer["next_func"] = choose_n_hotels
         bot.register_next_step_handler(message=message, callback=check_int)
     else:
         text = f"По вашему запросу найдено городов: {len(buffer['cities'])}\n"
@@ -100,8 +119,7 @@ def search_locations(message: tb.types.Message) -> None:
 
 def choose_city(message: tb.types.Message) -> None:
     """
-    Сохраняет город из списка по вводу пользователя. Следующая функция: choose_n_hotels
-    Если введён 0, то переходит в search_locations.
+    Сохраняет город из списка по вводу пользователя. Если введён 0, то переходит в search_locations.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
@@ -113,11 +131,51 @@ def choose_city(message: tb.types.Message) -> None:
         bot.register_next_step_handler(message=message, callback=search_locations)
         return
 
+    if buffer["sort_order"] == "BEST_SELLER":
+        text = "В каком диапазоне цен (в долларах за ночь) вы хотите найти отели?" \
+               "Просто напишите пару чисел, например:\n10  30"
+        # Проверяем вводимые числа и переходим в choose_prices
+        buffer["bounds"] = None
+        buffer["next_func"] = choose_prices
+    else:
+        text = f"Сколько отелей будем искать? Только не больше {max_n_hotels}, пожалуйста."
+        # Проверяем вводимое число и переходим в choose_n_hotels
+        buffer["bounds"] = (1, max_n_hotels)
+        buffer["next_func"] = choose_n_hotels
+
     bot.send_message(chat_id=chat_id, text=f"Будем искать в городе:\n"
-                                             f"{buffer['cities'][num_city - 1][0]}\n\n"
-                                             f"Сколько отелей найти? "
-                                             f"Только не больше {max_n_hotels}, пожалуйста.")
+                                           f"{buffer['cities'][num_city - 1][0]}\n\n{text}")
     buffer["destinationId"] = buffer["cities"][num_city - 1][1]
+    bot.register_next_step_handler(message=message, callback=check_int)
+
+
+def choose_prices(message: tb.types.Message) -> None:
+    """
+    Сохраняет диапазон цен (в долларах за ночь), в пределах которого будет происходить поиск отелей.
+
+    :param message: входящее сообщение
+    :type message: tb.types.Message
+    """
+    buffer["prices"] = buffer["number"]
+    bot.send_message(chat_id=chat_id, text="Теперь напишите ещё два числа. Я буду искать отели в этом диапазоне "
+                                           "расстояний (между отелем и центром города, в километрах).")
+    # Проверяем вводимые числа и переходим в choose_distances
+    buffer["next_func"] = choose_distances
+    bot.register_next_step_handler(message=message, callback=check_int)
+
+
+def choose_distances(message: tb.types.Message) -> None:
+    """
+    Сохраняет диапазон расстояний между отелем и центром города (в километрах),
+    В пределах которого будет происходить поиск отелей.
+
+    :param message: входящее сообщение
+    :type message: tb.types.Message
+    """
+    buffer["distances"] = buffer["number"]
+    bot.send_message(chat_id=chat_id, text=f"Примечание: я буду пропускать отели, для которых не указана цена и "
+                                           f"расстояние до центра города.\n"
+                                           f"Сколько отелей будем искать? Только не больше {max_n_hotels}, пожалуйста.")
     # Проверяем вводимое число и переходим в choose_n_hotels
     buffer["bounds"] = (1, max_n_hotels)
     buffer["next_func"] = choose_n_hotels
@@ -126,16 +184,16 @@ def choose_city(message: tb.types.Message) -> None:
 
 def choose_n_hotels(message: tb.types.Message) -> None:
     """
-    Сохраняет количество отелей для поиска по вводу пользователя. Следующая функция: choose_n_photos
+    Сохраняет количество отелей для поиска.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
     """
     buffer["n_hotels"] = buffer["number"]
     bot.send_message(chat_id=chat_id, text=f"Отлично, с количеством отелей разобрались. "
-                                             f"Хотите посмотреть фотографии для каждого отеля?\n"
-                                             f"Введите количество фотографий (не больше {max_n_photos}) "
-                                             f"или 0, если без них.")
+                                           f"Хотите посмотреть фотографии для каждого отеля?\n"
+                                           f"Введите количество фотографий (не больше {max_n_photos}) "
+                                           f"или 0, если без них.")
     # Проверяем вводимое число и переходим в choose_n_photos
     buffer["bounds"] = (0, max_n_photos)
     buffer["next_func"] = choose_n_photos
@@ -144,7 +202,7 @@ def choose_n_hotels(message: tb.types.Message) -> None:
 
 def choose_n_photos(message: tb.types.Message) -> None:
     """
-    Сохраняет количество фотографий для поиска по вводу пользователя. Следующая функция: choose_dates
+    Сохраняет количество фотографий для поиска.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
@@ -165,17 +223,17 @@ def choose_n_photos(message: tb.types.Message) -> None:
 
 def choose_dates(message: tb.types.Message) -> None:
     """
-    Сохраняет даты въезда и выезда по вводу пользователя. Следующая функция: search_hotels
+    Сохраняет даты въезда и выезда.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
     """
     if message.text == "Мне всё равно..":
-        bot.send_message(chat_id=chat_id, text="Понимаю! Найду отели на этой неделе.",
+        bot.send_message(chat_id=chat_id, text="Понимаю. Найду отели на неделю вперед.",
                          reply_markup=tb.types.ReplyKeyboardRemove())
-        check_in = dt.date.today().isoformat()
-        check_out = dt.date.today() + dt.timedelta(7)
-        buffer["dates"] = (check_in, check_out.isoformat())
+        check_in = dt.date.today()
+        check_out = dt.date.today() + dt.timedelta(days=7)
+        buffer["dates"] = (check_in.isoformat(), check_out.isoformat())
     else:
         buffer["dates"] = []
         for date in message.text.strip().split()[:2]:
@@ -187,7 +245,7 @@ def choose_dates(message: tb.types.Message) -> None:
                 bot.send_message(chat_id=chat_id, text="Даты введены неправильно. "
                                                        "Проверьте и введите ещё раз. Пример:\n"
                                                        "30.12.2022   07.01.2023")
-                bot.register_next_step_handler(message=message, callbck=choose_dates)
+                bot.register_next_step_handler(message=message, callback=choose_dates)
                 return
             except Exception as exc:
                 bot.send_message(chat_id=chat_id, text=f"Неизвестная ошибка: {exc}. Попробуйте ещё раз.")
@@ -207,24 +265,33 @@ def choose_dates(message: tb.types.Message) -> None:
 
     buffer["days"] = dt.date.fromisoformat(buffer["dates"][1]) - dt.date.fromisoformat(buffer["dates"][0])
     buffer["days"] = buffer["days"].days
-    search_hotels(message=message)
+    bot.send_message(chat_id=chat_id, text="Ищу...")
+    bot.send_chat_action(chat_id=chat_id, action="typing")
+    if buffer["sort_order"] == "BEST_SELLER":
+        all_pages = 20
+    else:
+        all_pages = 1
+
+    while buffer["cur_page"] <= all_pages:
+        if search_hotels():
+            break
+        buffer["cur_page"] += 1
+    bot.send_message(chat_id=chat_id, text="Поиск окончен.")
 
 
-def search_hotels(message: tb.types.Message) -> None:
+def search_hotels() -> bool:
     """
     Выводит информацию об отелях.
 
-    :param message: входящее сообщение
-    :type message: tb.types.Message
+    :return: True, if the search is over
+    :rtype: bool
     """
-    bot.send_message(chat_id=chat_id, text="Ищу...")
-    bot.send_chat_action(chat_id=chat_id, action="typing")
 
     url = "https://hotels4.p.rapidapi.com/properties/list"
     params = {
         "destinationId": buffer["destinationId"],
-        "pageNumber": "1",
-        "pageSize": f"{buffer['n_hotels']}",
+        "pageNumber": f"{buffer['cur_page']}",
+        "pageSize": 25,  # 25 - максимально возможный размер на одной странице
         "checkIn": buffer["dates"][0],
         "checkOut": buffer["dates"][1],
         "adults1": "1",
@@ -232,25 +299,22 @@ def search_hotels(message: tb.types.Message) -> None:
         "locale": "ru_RU",
         "currency": "USD"
     }
-    response = requests.get(url=url, headers=headers, params=params)
-    if response.status_code != 200:
-        bot.send_message(chat_id=chat_id, text=f"Ошибка соединения с сервером hotels.com. "
-                                               f"Код = {response.status_code}\n"
-                                               f"Напишите что-нибудь и я попробую ещё раз.")
-        bot.register_next_step_handler(message=message, callback=search_hotels)
-        return
+    for _ in range(3):
+        response = requests.get(url=url, headers=headers, params=params)
+        if response.status_code == 200:
+            break
+        bot.send_message(chat_id=chat_id, text=f"Не отвечает сервер... Код = {response.status_code}\n"
+                                               f"Пробую ещё раз.")
+    else:
+        bot.send_message(chat_id=chat_id, text="Оставляю попытки загрузить информацию.")
+        return True
 
     data = json.loads(response.text)
-    for ind, hotel in enumerate(data["data"]["body"]["searchResults"]["results"], 1):
-        name = hotel["name"]
-        address = f"{hotel['address'].get('streetAddress', '(без улицы)')}, " \
-                  f"{hotel['address'].get('locality', '(без населённого пункта)')}, " \
-                  f"{hotel['address'].get('region', '(без региона)')}, " \
-                  f"{hotel['address'].get('countryName', '(без страны)')}, " \
-                  f"{hotel['address'].get('postalCode', '(без почтового индекса)')}"
-        address = re.sub(r",\s*,", ",", address)
-        address = re.sub(r",\s*$", "", address)
-        landmark = f"{hotel['landmarks'][0]['label'].lower()} расположен в {hotel['landmarks'][0]['distance']}"
+    if len(data["data"]["body"]["searchResults"]["results"]) == 0:
+        bot.send_message(chat_id=chat_id, text="Странно, не нашлось ни одного отеля.")
+        return True
+
+    for hotel in data["data"]["body"]["searchResults"]["results"]:
         daily_price = hotel.get("ratePlan", "(без указания цены)")
         if isinstance(daily_price, dict):
             daily_price = daily_price["price"]["exactCurrent"]
@@ -259,28 +323,65 @@ def search_hotels(message: tb.types.Message) -> None:
             price += f"за {buffer['days']} дней: {daily_price * buffer['days'] :.2f}$"
         else:
             price = daily_price
+
+        try:
+            if buffer["sort_order"] == "BEST_SELLER" and not (buffer["prices"][0] <= daily_price <= buffer["prices"][1]):
+                continue
+        except TypeError:
+            continue
+
+        distance = re.sub(",", ".", hotel['landmarks'][0]['distance'].split()[0])
+        try:
+            if buffer["sort_order"] == "BEST_SELLER" and \
+                    not (buffer["distances"][0] <= float(distance) <= buffer["distances"][1]):
+                continue
+        except ValueError:
+            continue
+
+        if isinstance(hotel['landmarks'][0], dict):
+            landmark = f"{hotel['landmarks'][0]['label'].lower()} расположен в {hotel['landmarks'][0]['distance']}"
+        else:
+            landmark = "(нет информации)"
+
+        name = hotel["name"]
+        address = f"{hotel['address'].get('streetAddress', '(без улицы)')}, " \
+                  f"{hotel['address'].get('locality', '(без населённого пункта)')}, " \
+                  f"{hotel['address'].get('region', '(без региона)')}, " \
+                  f"{hotel['address'].get('countryName', '(без страны)')}, " \
+                  f"{hotel['address'].get('postalCode', '(без почтового индекса)')}"
+        address = re.sub(r",\s*,", ",", address)
+        address = re.sub(r",\s*$", "", address)
         link = f"https://www.hotels.com/ho{hotel['id']}"
 
-        bot.send_message(chat_id=chat_id, text=f"{ind}. {name}\n" \
+        buffer["found_hotels"] += 1
+        bot.send_message(chat_id=chat_id, text=f"{buffer['found_hotels']}. {name}\n" \
                                                f"Адрес: {address}\n" \
                                                f"Удалённость: {landmark}\n" \
                                                f"Стоимость: {price}\n" \
                                                f"Ссылка на отель: {link}")
         if buffer["n_photos"]:
             send_photos(hotel["id"])
-        if ind == buffer["n_hotels"]:
-            break
-    else:
-        bot.send_message(chat_id=chat_id, text=f"Сорян, отелей нашлось меньше, чем вы хотели... {emoji_sad}")
+
+        if buffer["found_hotels"] == buffer["n_hotels"]:
+            return True
+    if buffer["found_hotels"] == 0:
+        bot.send_message(chat_id=chat_id, text=f"Просмотрено {params['pageSize']} отелей. "
+                                               f"Условиям ни один не подходит.")
+        bot.send_chat_action(chat_id=chat_id, action="typing")
+
+    return False
 
 
-def send_photos(hotel_id: int) -> None:
+def send_photos(hotel_id: str) -> None:
     """
     Отправляет фотографии отелей.
 
+    :param hotel_id: hotel id
+    :type hotel_id: str
     """
+
     url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"
-    for _ in range(2):
+    for _ in range(3):
         response = requests.get(url=url, headers=headers, params={"id": hotel_id})
         if response.status_code == 200:
             break
