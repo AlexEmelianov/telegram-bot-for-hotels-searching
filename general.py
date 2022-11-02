@@ -3,24 +3,28 @@ import requests
 import json
 import re
 import datetime as dt
+import os
 
 # Telegram bot 'hotels.com explorer' @hotels_com_explorer_bot
 bot = tb.TeleBot('5674957505:AAHYD-lzCXY8ZviDoarCW3ZC5-ejgdQMN7k', threaded=False)
+headers = {
+    "X-RapidAPI-Key": "7b02c17b48msh9add7caef2e26f6p198d5ejsn2590d9fc9e38",  # key from inner***
+    "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
+}  # "X-RapidAPI-Key": "b0223e57dfmshcde41c766925241p162c8djsn3d243fb512ac",  # key from zyr***
 chat_id = 0
 max_n_hotels = 20  # Максимальное количество отелей для вывода пользователю (не больше 25)
 max_n_photos = 20  # Максимальное количество фотографий для вывода пользователю
-buffer = {}  # Хранилище данных
-headers = {
-    "X-RapidAPI-Key": "b0223e57dfmshcde41c766925241p162c8djsn3d243fb512ac",
-    "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
-}
+sep_history = "\n*****\n"  # Разделитель для файлов истории
+buffer = dict()    # Временное хранилище данных
 emoji_sad = u"\U0001F614"  # U+1F614
 emoji_town = u"\U0001F306"  # U+1F306
 
 
 def check_int(message: tb.types.Message) -> None:
     """
-    Проверяет вводимое пользователем число на входимость в диапазон 'buffer["bounds"][0]' - 'buffer["bounds"][1]'
+    Два варианта:
+        - проверяет два вводимых числа, если buffer["bounds"] is None;
+        - проверяет одно вводимое число на входимость в диапазон 'buffer["bounds"][0]' - 'buffer["bounds"][1]'
 
     :param message: входящее сообщение
     :type message: tb.types.Message
@@ -43,7 +47,8 @@ def check_int(message: tb.types.Message) -> None:
             if number < buffer["bounds"][0] or number > buffer["bounds"][1]:
                 raise ValueError
         except ValueError:
-            bot.send_message(chat_id=chat_id, text=f"Я жду от вас число от {buffer['bounds'][0]} до {buffer['bounds'][1]}")
+            bot.send_message(chat_id=chat_id, text=f"Я жду от вас число от {buffer['bounds'][0]} "
+                                                   f"до {buffer['bounds'][1]}")
             bot.register_next_step_handler(message=message, callback=check_int)
             return
         buffer["number"] = number
@@ -53,7 +58,7 @@ def check_int(message: tb.types.Message) -> None:
 
 def start(message: tb.types.Message) -> None:
     """
-    Спрашивает пользователя, в каком городе будем искать отель и передает ответ в search_locations
+    Спрашивает пользователя, в каком городе будем искать отель и передает ответ в search_locations.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
@@ -64,19 +69,23 @@ def start(message: tb.types.Message) -> None:
 
 def search_locations(message: tb.types.Message) -> None:
     """
-    Ищет города по вводу пользователя. Если города не найдены, то ждёт ответ и повторяет поиск.
+    Ищет города по вводу пользователя. Если города не найдены, то повторяет поиск.
+    Если введен 0, то останавливает поиск.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
     """
     url = "https://hotels4.p.rapidapi.com/locations/v2/search"
-    params = {"query": message.text, "locale": "ru_RU"}
+    if message.text == "0":
+        bot.send_message(chat_id=chat_id, text="Останавливаю поиск.")
+        return
+
     bot.send_chat_action(chat_id=chat_id, action="typing")
-    response = requests.get(url=url, headers=headers, params=params)
+    response = requests.get(url=url, headers=headers, params={"query": message.text, "locale": "ru_RU"})
     if response.status_code != 200:
-        bot.send_message(chat_id=chat_id, text=f"Ошибка соединения с сервером hotels.com. "
-                                               f"Код = {response.status_code}\n"
-                                               f"Напишите что-нибудь и я попробую ещё раз.")
+        bot.send_message(chat_id=chat_id, text=f"Ошибка соединения с сервером. Код = {response.status_code}\n"
+                                               f"Напишите город ещё раз и я попробую повторно.\n"
+                                               f"Или напишите 0, чтобы остановить попытки.")
         bot.register_next_step_handler(message=message, callback=search_locations)
         return
 
@@ -167,7 +176,7 @@ def choose_prices(message: tb.types.Message) -> None:
 def choose_distances(message: tb.types.Message) -> None:
     """
     Сохраняет диапазон расстояний между отелем и центром города (в километрах),
-    В пределах которого будет происходить поиск отелей.
+    в пределах которого будет происходить поиск отелей.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
@@ -223,7 +232,7 @@ def choose_n_photos(message: tb.types.Message) -> None:
 
 def choose_dates(message: tb.types.Message) -> None:
     """
-    Сохраняет даты въезда и выезда.
+    Сохраняет даты въезда и выезда для поиска.
 
     :param message: входящее сообщение
     :type message: tb.types.Message
@@ -267,22 +276,29 @@ def choose_dates(message: tb.types.Message) -> None:
     buffer["days"] = buffer["days"].days
     bot.send_message(chat_id=chat_id, text="Ищу...")
     bot.send_chat_action(chat_id=chat_id, action="typing")
-    if buffer["sort_order"] == "BEST_SELLER":
-        all_pages = 20
-    else:
-        all_pages = 1
 
-    while buffer["cur_page"] <= all_pages:
-        if search_hotels():
+    buffer["found_hotels"] = 0
+    for cur_page in range(1, 11):
+        if search_hotels(cur_page):
             break
-        buffer["cur_page"] += 1
+
     bot.send_message(chat_id=chat_id, text="Поиск окончен.")
+    if buffer["found_hotels"] == 0:
+        buffer["history"] += "(не нашлось)"
+
+    if not os.path.isdir("history"):
+        os.mkdir("history")
+    with open(os.path.join("history", f"{message.from_user.username}"), "a", encoding="utf8") as file:
+        file.write(f"{buffer['history']}{sep_history}")
+    buffer.clear()
 
 
-def search_hotels() -> bool:
+def search_hotels(cur_page: int) -> bool:
     """
     Выводит информацию об отелях.
 
+    :param cur_page: текущая страница поиска
+    :type cur_page: int
     :return: True, if the search is over
     :rtype: bool
     """
@@ -290,7 +306,7 @@ def search_hotels() -> bool:
     url = "https://hotels4.p.rapidapi.com/properties/list"
     params = {
         "destinationId": buffer["destinationId"],
-        "pageNumber": f"{buffer['cur_page']}",
+        "pageNumber": f"{cur_page}",
         "pageSize": 25,  # 25 - максимально возможный размер на одной странице
         "checkIn": buffer["dates"][0],
         "checkOut": buffer["dates"][1],
@@ -303,8 +319,7 @@ def search_hotels() -> bool:
         response = requests.get(url=url, headers=headers, params=params)
         if response.status_code == 200:
             break
-        bot.send_message(chat_id=chat_id, text=f"Не отвечает сервер... Код = {response.status_code}\n"
-                                               f"Пробую ещё раз.")
+        bot.send_message(chat_id=chat_id, text=f"Не отвечает сервер... Код = {response.status_code}\nПробую ещё раз.")
     else:
         bot.send_message(chat_id=chat_id, text="Оставляю попытки загрузить информацию.")
         return True
@@ -325,7 +340,8 @@ def search_hotels() -> bool:
             price = daily_price
 
         try:
-            if buffer["sort_order"] == "BEST_SELLER" and not (buffer["prices"][0] <= daily_price <= buffer["prices"][1]):
+            if buffer["sort_order"] == "BEST_SELLER" and \
+                    not (buffer["prices"][0] <= daily_price <= buffer["prices"][1]):
                 continue
         except TypeError:
             continue
@@ -354,21 +370,23 @@ def search_hotels() -> bool:
         link = f"https://www.hotels.com/ho{hotel['id']}"
 
         buffer["found_hotels"] += 1
-        bot.send_message(chat_id=chat_id, text=f"{buffer['found_hotels']}. {name}\n" \
-                                               f"Адрес: {address}\n" \
-                                               f"Удалённость: {landmark}\n" \
-                                               f"Стоимость: {price}\n" \
-                                               f"Ссылка на отель: {link}")
+        text = f"{buffer['found_hotels']}. {name}\n" \
+               f"Адрес: {address}\n" \
+               f"Удалённость: {landmark}\n" \
+               f"Стоимость: {price}\n" \
+               f"Ссылка на отель: {link}"
+        bot.send_message(chat_id=chat_id, text=text)
+        buffer["history"] += f"\n\n{text}"  # Запись истории во временное хранилище
         if buffer["n_photos"]:
             send_photos(hotel["id"])
 
         if buffer["found_hotels"] == buffer["n_hotels"]:
             return True
+
     if buffer["found_hotels"] == 0:
-        bot.send_message(chat_id=chat_id, text=f"Просмотрено {params['pageSize']} отелей. "
+        bot.send_message(chat_id=chat_id, text=f"Просмотрено {cur_page * params['pageSize']} отелей. "
                                                f"Условиям ни один не подходит.")
         bot.send_chat_action(chat_id=chat_id, action="typing")
-
     return False
 
 
@@ -400,7 +418,7 @@ def send_photos(hotel_id: str) -> None:
         return
 
     for ind, image in enumerate(data["hotelImages"], 1):
-        photo_link = re.sub(r"{size}", "y", image["baseUrl"])  # Размер 500 х 334
+        photo_link = re.sub(r"\{size}", "y", image["baseUrl"])  # Размер 500 х 334
         bot.send_chat_action(chat_id=chat_id, action="upload_photo")
         bot.send_photo(chat_id=chat_id, photo=photo_link)
         if ind == buffer["n_photos"]:

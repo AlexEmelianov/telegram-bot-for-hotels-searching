@@ -1,4 +1,4 @@
-import telebot as tb
+from telebot.types import Message
 from general import bot
 import highprice
 import lowprice
@@ -7,7 +7,7 @@ import history
 
 
 @bot.message_handler(commands=["help", "start"])
-def help_start_command(message: tb.types.Message) -> None:
+def help_start_command(message: Message) -> None:
 	text = "Я помогу подобрать для вас отель. Вы можете отправить мне следующие команды:\n" \
 			"/lowprice — вывод самых дешёвых отелей в городе\n" \
 			"/highprice — вывод самых дорогих отелей в городе\n" \
@@ -17,33 +17,32 @@ def help_start_command(message: tb.types.Message) -> None:
 
 
 @bot.message_handler(commands=["lowprice"])
-def lowprice_command(message: tb.types.Message) -> None:
+def lowprice_command(message: Message) -> None:
 	lowprice.start(message=message)
 
 
 @bot.message_handler(commands=["highprice"])
-def highprice_command(message: tb.types.Message) -> None:
+def highprice_command(message: Message) -> None:
 	highprice.start(message=message)
 
 
 @bot.message_handler(commands=["bestdeal"])
-def bestdeal_command(message: tb.types.Message) -> None:
+def bestdeal_command(message: Message) -> None:
 	bestdeal.start(message=message)
 
 
 @bot.message_handler(commands=["history"])
-def history_command(message: tb.types.Message) -> None:
-	text = history.get_history()
-	bot.send_message(chat_id=message.chat.id, text=text)
+def history_command(message: Message) -> None:
+	history.start(message=message)
 
 
 @bot.message_handler(content_types=['text'])
-def get_text_messages(message: tb.types.Message) -> None:
+def get_text_messages(message: Message) -> None:
 	"""
-	Бот принимает текстовые сообщения и выводит ответное приветствие или просьбу написать /help.
+	Принимает текстовые сообщения и выводит ответное приветствие или просьбу написать /help.
 
 	:param message: входящее текстовое сообщение
-	:type message: tb.types.Message
+	:type message: Message
 	"""
 	user_text = message.text.lower()
 	if user_text.startswith("привет") or user_text == "/hello-world":
