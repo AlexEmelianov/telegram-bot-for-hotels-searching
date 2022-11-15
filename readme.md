@@ -11,11 +11,10 @@
 - Установите библиотеку [requests](https://pypi.org/project/requests/)
 - Клонируйте проект:
 ```
-git clone https://gitlab.skillbox.ru/aleksei_emelianov_1/python_basic_diploma.git
+git clone https://github.com/AlexEmelianov/telegram-bot-for-hotels-searching.git
 ```
 - Запустите бот в командной строке из папки с проектом:
 ```
-cd python_basic_diploma
 python main.py
 ```
 *Примечание 1: в файле general.py укажите токен своего бота*
