@@ -1,6 +1,8 @@
 from telebot.types import Message
 import general as g
 from datetime import datetime as dt
+import os
+import csv
 
 
 def start(message: Message) -> None:
@@ -11,8 +13,10 @@ def start(message: Message) -> None:
     :type message: Message
     """
     g.chat_id = message.chat.id
-    g.buffer["history"] = f"Команда: {__name__}\n" \
-                          f"Время: {dt.today().strftime('%H:%M:%S  %d.%m.%Y')}\n" \
-                          f"Список отелей:"
+    file_path = os.path.join("history", f"{message.from_user.username}.csv")
+    if not os.path.isdir("history"):
+        os.mkdir("history")
+
+    g.buffer["history"] = [__name__, dt.today().strftime('%H:%M:%S  %d.%m.%Y'), ""]
     g.buffer["sort_order"] = "PRICE_HIGHEST_FIRST"
     g.start(message=message)

@@ -4,17 +4,17 @@ import json
 import re
 import datetime as dt
 import os
+import csv
+import config
 
-# Telegram bot 'hotels.com explorer' @hotels_com_explorer_bot
-bot = tb.TeleBot('5674957505:AAHYD-lzCXY8ZviDoarCW3ZC5-ejgdQMN7k', threaded=False)
-headers = {
-    "X-RapidAPI-Key": "7b02c17b48msh9add7caef2e26f6p198d5ejsn2590d9fc9e38",  # key from inner***
-    "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
-}  # "X-RapidAPI-Key": "b0223e57dfmshcde41c766925241p162c8djsn3d243fb512ac",  # key from zyr***
+bot = tb.TeleBot(config.token, threaded=False)  # Необходимо указать токен вашего бота вместо config.token
+headers = config.headers  # Необходимо указать заголовки, которые вы получите после регистрации на rapidapi.com:
+                          # 1. Перейти в API Marketplace → категория Travel → Hotels
+                          # 2. Нажать кнопку Subscribe to Test
+                          # 3. Выбрать бесплатный пакет (Basic)
 chat_id = 0
 max_n_hotels = 20  # Максимальное количество отелей для вывода пользователю (не больше 25)
 max_n_photos = 20  # Максимальное количество фотографий для вывода пользователю
-sep_history = "\n*****\n"  # Разделитель для файлов истории
 buffer = dict()    # Временное хранилище данных
 emoji_sad = u"\U0001F614"  # U+1F614
 emoji_town = u"\U0001F306"  # U+1F306
@@ -284,12 +284,11 @@ def choose_dates(message: tb.types.Message) -> None:
 
     bot.send_message(chat_id=chat_id, text="Поиск окончен.")
     if buffer["found_hotels"] == 0:
-        buffer["history"] += "(не нашлось)"
+        buffer["history"][2] += "(не нашлось)"
 
-    if not os.path.isdir("history"):
-        os.mkdir("history")
-    with open(os.path.join("history", f"{message.from_user.username}"), "a", encoding="utf8") as file:
-        file.write(f"{buffer['history']}{sep_history}")
+    with open(os.path.join("history", f"{message.from_user.username}.csv"), "a", encoding="utf8") as file:
+        writer = csv.writer(file)
+        writer.writerow(buffer["history"])
     buffer.clear()
 
 
@@ -374,9 +373,9 @@ def search_hotels(cur_page: int) -> bool:
                f"Адрес: {address}\n" \
                f"Удалённость: {landmark}\n" \
                f"Стоимость: {price}\n" \
-               f"Ссылка на отель: {link}"
+               f"Ссылка на отель: {link}\n"
         bot.send_message(chat_id=chat_id, text=text)
-        buffer["history"] += f"\n\n{text}"  # Запись истории во временное хранилище
+        buffer["history"][2] += f"{text}"  # Дозапись истории во временное хранилище
         if buffer["n_photos"]:
             send_photos(hotel["id"])
 
