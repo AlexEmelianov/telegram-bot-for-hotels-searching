@@ -7,13 +7,15 @@
 
 - Установите [Python](https://www.python.org/downloads/)
   (обычно, после этого автоматически устанавливается [pip](https://pip.pypa.io/en/stable/installation/))
-- Установите библиотеку [pyTelegramBotAPI](https://pypi.org/project/pyTelegramBotAPI/0.3.0/)
-- Установите библиотеку [requests](https://pypi.org/project/requests/)
 - Клонируйте проект:
 ```
 git clone https://github.com/AlexEmelianov/telegram-bot-for-hotels-searching.git
 ```
-- Запустите бот в командной строке из папки с проектом:
+- Установите зависимости:
+```
+pip install -r requirements.txt
+```
+- Запустите бот:
 ```
 python main.py
 ```
